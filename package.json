@@ -1,0 +1,14 @@
+{
+  "name": "bitorrent",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "Victor Lopes <thevictorfl@gmail.com>",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "bencode": "^2.0.2"
+  }
+}
