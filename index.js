@@ -51,9 +51,9 @@ connectionRequest.writeUInt32BE(0, 8)
 connectionRequest.writeUInt32BE(transactionId, 12)
 
 UDPSocket.on('message', (msg, rinfo) => {
-    for (const [key, value] of Object.entries(rinfo)) {
-        console.log(`[rinfo-${key}]: ${value}`)
-    }
+    // for (const [key, value] of Object.entries(rinfo)) {
+    //     console.log(`[rinfo-${key}]: ${value}`)
+    // }
 
     const response = Buffer.from(msg)
     const action = response.readUInt32BE(0)
@@ -62,48 +62,64 @@ UDPSocket.on('message', (msg, rinfo) => {
     console.log(`Action: ${action}`)
     console.log(`TransactionId: ${transactionId}`)
 
-    switch (action) {
-        case CONNECT:
-            // Formato da resposta
-            // Offset  Size            Name            Value
-            // 0       32-bit integer  action          0 // connect
-            // 4       32-bit integer  transaction_id
-            // 8       64-bit integer  connection_id
-            // 16
-            const connectionIdHigh = response.readUInt32BE(8)
-            const connectionIdLow = response.readUInt32BE(12)
+    if (action === CONNECT) {
+        // Formato da resposta
+        // Offset  Size            Name            Value
+        // 0       32-bit integer  action          0 // connect
+        // 4       32-bit integer  transaction_id
+        // 8       64-bit integer  connection_id
+        // 16
+        const connectionIdHigh = response.readUInt32BE(8)
+        const connectionIdLow = response.readUInt32BE(12)
 
-            console.log(`Connect`)
-            scrape(connectionIdHigh, connectionIdLow, transactionId)
-            announce(connectionIdHigh, connectionIdLow)
-            break
+        console.log(`Connect`)
+        scrape(connectionIdHigh, connectionIdLow, transactionId)
+        announce(connectionIdHigh, connectionIdLow)
+    } else if (action === ANNOUNCE) {
+        // Formato resposta
+        // Offset      Size            Name            Value
+        // 0           32-bit integer  action          1 // announce
+        // 4           32-bit integer  transaction_id
+        // 8           32-bit integer  interval
+        // 12          32-bit integer  leechers
+        // 16          32-bit integer  seeders
+        // 20 + 6 * n  32-bit integer  IP address
+        // 24 + 6 * n  16-bit integer  TCP port
+        // 20 + 6 * N
+        console.log('Announce')
+        const interval = response.readUInt32BE(8)
+        const leechers = response.readUInt32BE(12)
+        const seeders = response.readUInt32BE(16)
+        const ipAddress = [response.readUInt8(20), response.readUInt8(21),
+                           response.readUInt8(22), response.readUInt8(23)].join('.')
+        const port = response.readUInt16BE(24)
 
-        case ANNOUNCE:
-            console.log('Announce')
-            break
+        console.log(`interval: ${interval}`)
+        console.log(`leechers: ${leechers}`)
+        console.log(`seeders: ${seeders}`)
+        console.log(`ipAddress: ${ipAddress}`)
+        console.log(`port: ${port}`)
+    } else if (action === SCRAPE) {
+        // Formato da resposta
+        // Offset      Size            Name            Value
+        // 0           32-bit integer  action          2 // scrape
+        // 4           32-bit integer  transaction_id
+        // 8 + 12 * n  32-bit integer  seeders
+        // 12 + 12 * n 32-bit integer  completed
+        // 16 + 12 * n 32-bit integer  leechers
+        // 8 + 12 * N
+        console.log('Scrape')
+        const seeders = response.readUInt32BE(8)
+        const completed = response.readUInt32BE(12)
+        const leechers = response.readUInt32BE(16)
 
-        case SCRAPE:
-            // Formato da resposta
-            // Offset      Size            Name            Value
-            // 0           32-bit integer  action          2 // scrape
-            // 4           32-bit integer  transaction_id
-            // 8 + 12 * n  32-bit integer  seeders
-            // 12 + 12 * n 32-bit integer  completed
-            // 16 + 12 * n 32-bit integer  leechers
-            // 8 + 12 * N
-            console.log('Scrape')
-            const seeders = response.readUInt32BE(8)
-            const completed = response.readUInt32BE(12)
-            const leechers = response.readUInt32BE(16)
-
-            console.log(`seeders: ${seeders}`)
-            console.log(`completed: ${completed}`)
-            console.log(`leechers: ${leechers}`)
-            break
-        
-        case ERROR:
-            console.log('Error')
+        console.log(`seeders: ${seeders}`)
+        console.log(`completed: ${completed}`)
+        console.log(`leechers: ${leechers}`)
+    } else if (action === ERROR) {
+        console.log('Error')
     }
+    console.log('\n')
 })
 
 // O announce padrão não estava me retornando resposta, então peguei
@@ -179,4 +195,18 @@ function announce (connectionIdHigh, connectionIdLow) {
         if (error)
             console.log(`error: ${error}`)
     })
+}
+
+function buildHandshake () {
+    const handshake = Buffer.alloc(68, 0)
+    // Length do nome do protocolo (19)
+    handshake.writeUInt8(19)
+    // Nome do protocolo
+    handshake.write('BitTorrent protocol')
+    // info_hash
+    infoHash.copy(handshake, 28)
+    // peer_id
+    peerId.copy(handshake, 48)
+
+    return handshake
 }
