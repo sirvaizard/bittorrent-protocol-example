@@ -1,17 +1,18 @@
 import crypto from 'crypto'
 import fs from 'fs/promises'
-import dgram from 'dgram'
+import dgram, { Socket } from 'dgram'
 import { Buffer } from 'buffer'
 import { URL } from 'url'
 import bencode from 'bencode'
 import bignum from 'bignum'
+import net from 'net'
 
 const CONNECT = 0
 const ANNOUNCE = 1
 const SCRAPE = 2
 const ERROR = 3
 
-const torrentFilename = 'big-buck-bunny.torrent'
+const torrentFilename = '007.torrent'
 const torrentFile = await fs.readFile(torrentFilename)
 
 const torrent = bencode.decode(torrentFile, 'utf8')
@@ -24,7 +25,7 @@ const leftDownload = torrent.info.length ? torrent.info.length :
 const leftDownloadBuffer = bignum.toBuffer(leftDownload, {size: 8})
 
 const peerId = crypto.randomBytes(20)
-Buffer.from('-VICTOR-').copy(peerId, 0)
+Buffer.from('-AT0001-').copy(peerId, 0);
 
 // for (const [key, value] of Object.entries(torrent)) {
 //     console.log(`[${key}]: ${value}`)
@@ -90,15 +91,23 @@ UDPSocket.on('message', (msg, rinfo) => {
         const interval = response.readUInt32BE(8)
         const leechers = response.readUInt32BE(12)
         const seeders = response.readUInt32BE(16)
-        const ipAddress = [response.readUInt8(20), response.readUInt8(21),
-                           response.readUInt8(22), response.readUInt8(23)].join('.')
-        const port = response.readUInt16BE(24)
+        const peers = []
+
+        for (let i = 20; i < response.length; i += 6) {
+            peers.push({
+                host: [response.readUInt8(i), response.readUInt8(i+1),
+                                   response.readUInt8(i+2), response.readUInt8(i+3)].join('.'),
+                port: response.readUInt16BE(i+4)
+            })
+        }
+
 
         console.log(`interval: ${interval}`)
         console.log(`leechers: ${leechers}`)
         console.log(`seeders: ${seeders}`)
-        console.log(`ipAddress: ${ipAddress}`)
-        console.log(`port: ${port}`)
+        console.log(peers)
+
+        download(peers)
     } else if (action === SCRAPE) {
         // Formato da resposta
         // Offset      Size            Name            Value
@@ -125,6 +134,7 @@ UDPSocket.on('message', (msg, rinfo) => {
 // O announce padrão não estava me retornando resposta, então peguei
 // o primeiro da announce-list que me retornou algo.
 const announceURL = torrent['announce-list'][2][0]
+console.log('announce:::', announceURL)
 const url = new URL(announceURL)
 UDPSocket.send(connectionRequest, 0, connectionRequest.length, url.port, url.hostname, (error, _) => {
     if (error) {
@@ -179,7 +189,7 @@ function announce (connectionIdHigh, connectionIdLow) {
     // transaction_id
     announceRequest.writeUInt32BE(transactionId, 12)
     // info_hash
-    infoHash.copy(announceRequest, 16)
+    announceRequest.write(infoHash.toString(), 16, 20, 'hex')
     // peer_id
     peerId.copy(announceRequest, 36)
     // left
@@ -200,7 +210,7 @@ function announce (connectionIdHigh, connectionIdLow) {
 function buildHandshake () {
     const handshake = Buffer.alloc(68, 0)
     // Length do nome do protocolo (19)
-    handshake.writeUInt8(19)
+    handshake.writeUInt8(19, 0)
     // Nome do protocolo
     handshake.write('BitTorrent protocol')
     // info_hash
@@ -209,4 +219,32 @@ function buildHandshake () {
     peerId.copy(handshake, 48)
 
     return handshake
+}
+
+
+
+function download (peers) {
+    console.log('download')
+    
+    const handshake = buildHandshake()
+    console.log('handshake:::', handshake.toString())
+    
+    for (const peer of peers) {
+        const TCPSocket = new net.Socket()
+        TCPSocket.on('error', (error) => {
+            console.warn('error::', peer.host)
+        })
+    
+        TCPSocket.on('data', (data) => {
+            console.log('data::', data)
+        })
+    
+    
+        TCPSocket.connect(peer, () => {
+            console.log('connecting')
+            TCPSocket.write(handshake, (error) => {
+                console.log('writed::', peer.host)
+            })
+        })
+    }
 }
